@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Bulk Image Grabber</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root{
+    --bg:#12141a;
+    --panel:#1b1e27;
+    --panel-2:#232734;
+    --line:#2c3140;
+    --text:#e9ebf1;
+    --muted:#9096a8;
+    --accent:#5ee0c0;
+    --accent-dim:#3aa98f;
+    --danger:#ff8a80;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:32px 20px 60px;
+  }
+  .wrap{max-width:980px;margin:0 auto;}
+  h1{
+    font-size:1.5rem;
+    font-weight:650;
+    margin:0 0 4px;
+    letter-spacing:-0.01em;
+  }
+  .subtitle{color:var(--muted);font-size:.92rem;margin:0 0 24px;}
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:18px;
+    margin-bottom:18px;
+  }
+
+  .url-row{display:flex;gap:10px;flex-wrap:wrap;}
+  input[type=text]{
+    flex:1 1 320px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:8px;
+    color:var(--text);
+    padding:11px 13px;
+    font-size:.92rem;
+    outline:none;
+  }
+  input[type=text]:focus{border-color:var(--accent-dim);}
+  button{
+    border:none;
+    border-radius:8px;
+    padding:11px 18px;
+    font-size:.9rem;
+    font-weight:600;
+    cursor:pointer;
+    transition:filter .15s ease, opacity .15s ease;
+  }
+  button:disabled{opacity:.45;cursor:not-allowed;}
+  .btn-primary{background:var(--accent);color:#08211c;}
+  .btn-primary:hover:not(:disabled){filter:brightness(1.08);}
+  .btn-secondary{background:var(--panel-2);color:var(--text);border:1px solid var(--line);}
+  .btn-secondary:hover:not(:disabled){border-color:var(--accent-dim);}
+
+  .hint{color:var(--muted);font-size:.8rem;margin-top:10px;line-height:1.5;}
+
+  .status{font-size:.85rem;color:var(--muted);min-height:1.2em;margin-top:2px;}
+  .status.err{color:var(--danger);}
+  .status.ok{color:var(--accent);}
+
+  .toolbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:10px;
+    margin-bottom:14px;
+  }
+  .toolbar-left{display:flex;align-items:center;gap:14px;font-size:.88rem;color:var(--muted);}
+  label.check{display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none;}
+  input[type=checkbox]{
+    width:16px;height:16px;
+    accent-color:var(--accent);
+    cursor:pointer;
+  }
+
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+    gap:12px;
+  }
+  .card{
+    position:relative;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:8px;
+    overflow:hidden;
+    aspect-ratio:1/1;
+    cursor:pointer;
+  }
+  .card img{
+    width:100%;height:100%;
+    object-fit:cover;
+    display:block;
+  }
+  .card .check-badge{
+    position:absolute;
+    top:7px;left:7px;
+    width:20px;height:20px;
+    border-radius:5px;
+    background:rgba(10,12,16,.55);
+    border:1.5px solid rgba(255,255,255,.6);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .card.selected .check-badge{
+    background:var(--accent);
+    border-color:var(--accent);
+  }
+  .card.selected .check-badge::after{
+    content:"";
+    width:5px;height:9px;
+    border-right:2px solid #08211c;
+    border-bottom:2px solid #08211c;
+    transform:rotate(45deg) translate(-1px,-1px);
+  }
+  .card.selected{outline:2px solid var(--accent);}
+  .card .dim-w{
+    position:absolute;bottom:0;left:0;right:0;
+    font-size:.68rem;
+    color:#cfd3dd;
+    background:linear-gradient(transparent, rgba(0,0,0,.75));
+    padding:14px 6px 5px;
+    text-align:center;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .card.failed{opacity:.4;}
+  .card.failed::after{
+    content:"open in tab ↗";
+    position:absolute;inset:0;
+    display:flex;align-items:center;justify-content:center;
+    font-size:.68rem;color:var(--danger);
+    background:rgba(0,0,0,.4);
+    text-align:center;padding:8px;
+  }
+
+  .empty{
+    text-align:center;
+    color:var(--muted);
+    padding:40px 10px;
+    font-size:.9rem;
+  }
+
+  .progress-wrap{
+    display:none;
+    margin-top:12px;
+  }
+  .progress-track{
+    background:var(--panel-2);
+    border-radius:6px;
+    height:8px;
+    overflow:hidden;
+    border:1px solid var(--line);
+  }
+  .progress-fill{
+    height:100%;
+    background:var(--accent);
+    width:0%;
+    transition:width .2s ease;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Bulk Image Grabber</h1>
+  <p class="subtitle">Paste a page URL, pick the images you want, download them as one .zip file.</p>
+
+  <div class="panel">
+    <div class="url-row">
+      <input type="text" id="urlInput" placeholder="https://example.com/gallery" />
+      <button class="btn-primary" id="loadBtn">Load Images</button>
+    </div>
+    <div class="status" id="loadStatus"></div>
+    <div class="hint">
+      Fetched through a public CORS proxy since browsers can't read another site's HTML directly.
+      Some sites (heavy JavaScript rendering, strict anti-scraping) may return few or no results.
+    </div>
+  </div>
+
+  <div class="panel" id="resultsPanel" style="display:none;">
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <label class="check">
+          <input type="checkbox" id="selectAll">
+          Select all
+        </label>
+        <span id="countLabel">0 of 0 selected</span>
+      </div>
+      <button class="btn-primary" id="downloadBtn" disabled>Download selected (.zip)</button>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="status" id="progressStatus" style="margin-top:6px;"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="emptyPanel" style="display:none;">
+    <div class="empty">No images found on that page. Try a different URL, or the site may block scraping.</div>
+  </div>
+</div>
+
+<script>
+const PROXIES = [
+  url => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url),
+  url => "https://corsproxy.io/?" + encodeURIComponent(url),
+  url => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(url)
+];
+
+const urlInput = document.getElementById('urlInput');
+const loadBtn = document.getElementById('loadBtn');
+const loadStatus = document.getElementById('loadStatus');
+const resultsPanel = document.getElementById('resultsPanel');
+const emptyPanel = document.getElementById('emptyPanel');
+const grid = document.getElementById('grid');
+const selectAll = document.getElementById('selectAll');
+const countLabel = document.getElementById('countLabel');
+const downloadBtn = document.getElementById('downloadBtn');
+const progressWrap = document.getElementById('progressWrap');
+const progressFill = document.getElementById('progressFill');
+const progressStatus = document.getElementById('progressStatus');
+
+let images = []; // {url, selected, failed}
+
+function setStatus(msg, type){
+  loadStatus.textContent = msg || '';
+  loadStatus.className = 'status' + (type ? ' ' + type : '');
+}
+
+function resolveUrl(src, base){
+  try{ return new URL(src, base).href; }catch(e){ return null; }
+}
+
+async function loadImages(){
+  const rawUrl = urlInput.value.trim();
+  if(!rawUrl){ setStatus('Enter a URL first.', 'err'); return; }
+  let pageUrl = rawUrl;
+  if(!/^https?:\/\//i.test(pageUrl)) pageUrl = 'https://' + pageUrl;
+
+  loadBtn.disabled = true;
+  setStatus('Fetching page…');
+  resultsPanel.style.display = 'none';
+  emptyPanel.style.display = 'none';
+  grid.innerHTML = '';
+  images = [];
+
+  let html = null;
+  let lastErr = null;
+
+  for(let i = 0; i < PROXIES.length; i++){
+    try{
+      setStatus(`Fetching page… (trying proxy ${i+1} of ${PROXIES.length})`);
+      const res = await fetch(PROXIES[i](pageUrl));
+      if(!res.ok) throw new Error('Proxy returned ' + res.status);
+      html = await res.text();
+      if(html && html.length > 0) break;
+    }catch(err){
+      lastErr = err;
+      html = null;
+    }
+  }
+
+  try{
+    if(!html) throw lastErr || new Error('All proxies failed');
+
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const found = new Set();
+
+    doc.querySelectorAll('img').forEach(img => {
+      const candidates = [
+        img.getAttribute('src'),
+        img.getAttribute('data-src'),
+        img.getAttribute('data-lazy-src')
+      ].filter(Boolean);
+      const srcset = img.getAttribute('srcset');
+      if(srcset){
+        const first = srcset.split(',')[0].trim().split(' ')[0];
+        if(first) candidates.push(first);
+      }
+      for(const c of candidates){
+        const abs = resolveUrl(c, pageUrl);
+        if(abs && /^https?:\/\//i.test(abs) && !abs.startsWith('data:')) found.add(abs);
+      }
+    });
+
+    // also catch CSS background-image on inline styles
+    doc.querySelectorAll('[style*="background"]').forEach(el => {
+      const m = el.getAttribute('style').match(/url\(["']?([^"')]+)["']?\)/);
+      if(m){
+        const abs = resolveUrl(m[1], pageUrl);
+        if(abs && /^https?:\/\//i.test(abs)) found.add(abs);
+      }
+    });
+
+    images = Array.from(found).map(url => ({url, selected: false, failed: false}));
+
+    if(images.length === 0){
+      emptyPanel.style.display = 'block';
+      setStatus('');
+    } else {
+      setStatus(`Found ${images.length} image${images.length===1?'':'s'}.`, 'ok');
+      renderGrid();
+      resultsPanel.style.display = 'block';
+    }
+  }catch(err){
+    console.error(err);
+    const msg = 'Failed to fetch' === err.message
+      ? 'Network request was blocked. If you\'re viewing this inside the Claude chat window, download the file and open it directly in your browser instead — that sandbox blocks calls to external proxies.'
+      : `Could not load that page: ${err.message}. Try again, or a different URL.`;
+    setStatus(msg, 'err');
+  }finally{
+    loadBtn.disabled = false;
+  }
+}
+
+function renderGrid(){
+  grid.innerHTML = '';
+  images.forEach((imgData, idx) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.dataset.idx = idx;
+
+    const im = document.createElement('img');
+    im.src = imgData.url;
+    im.loading = 'lazy';
+    im.referrerPolicy = 'no-referrer';
+
+    const badge = document.createElement('div');
+    badge.className = 'check-badge';
+
+    card.appendChild(im);
+    card.appendChild(badge);
+    card.addEventListener('click', () => toggleSelect(idx));
+
+    grid.appendChild(card);
+  });
+  updateCount();
+}
+
+function toggleSelect(idx){
+  images[idx].selected = !images[idx].selected;
+  const card = grid.querySelector(`[data-idx="${idx}"]`);
+  card.classList.toggle('selected', images[idx].selected);
+  updateCount();
+}
+
+function updateCount(){
+  const selected = images.filter(i => i.selected).length;
+  countLabel.textContent = `${selected} of ${images.length} selected`;
+  downloadBtn.disabled = selected === 0;
+  selectAll.checked = selected === images.length && images.length > 0;
+}
+
+selectAll.addEventListener('change', () => {
+  images.forEach(i => i.selected = selectAll.checked);
+  grid.querySelectorAll('.card').forEach(c => c.classList.toggle('selected', selectAll.checked));
+  updateCount();
+});
+
+loadBtn.addEventListener('click', loadImages);
+urlInput.addEventListener('keydown', e => { if(e.key === 'Enter') loadImages(); });
+
+downloadBtn.addEventListener('click', downloadSelected);
+
+async function downloadSelected(){
+  const selected = images.filter(i => i.selected);
+  if(selected.length === 0) return;
+
+  downloadBtn.disabled = true;
+  progressWrap.style.display = 'block';
+  progressFill.style.width = '0%';
+
+  const zip = new JSZip();
+  let done = 0, failCount = 0;
+
+  for(const item of selected){
+    progressStatus.textContent = `Fetching ${done+1} of ${selected.length}…`;
+    try{
+      const res = await fetch(item.url, {mode:'cors'});
+      if(!res.ok) throw new Error('bad response');
+      const blob = await res.blob();
+      const ext = guessExt(item.url, blob.type);
+      const name = `image_${String(done+1).padStart(3,'0')}${ext}`;
+      zip.file(name, blob);
+    }catch(err){
+      item.failed = true;
+      failCount++;
+      const idx = images.indexOf(item);
+      const card = grid.querySelector(`[data-idx="${idx}"]`);
+      if(card){
+        card.classList.add('failed');
+        card.onclick = null;
+        card.addEventListener('click', () => window.open(item.url, '_blank'));
+      }
+    }
+    done++;
+    progressFill.style.width = Math.round((done/selected.length)*100) + '%';
+  }
+
+  if(done - failCount > 0){
+    progressStatus.textContent = 'Zipping…';
+    const content = await zip.generateAsync({type:'blob'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(content);
+    a.download = 'images.zip';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  progressStatus.textContent = failCount > 0
+    ? `Done. ${done-failCount} downloaded, ${failCount} failed (blocked by the source site — click them to open directly).`
+    : `Done. ${done} image${done===1?'':'s'} saved to images.zip.`;
+
+  downloadBtn.disabled = false;
+}
+
+function guessExt(url, mimeType){
+  const fromUrl = url.split('?')[0].match(/\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i);
+  if(fromUrl) return '.' + fromUrl[1].toLowerCase();
+  if(mimeType){
+    const map = {'image/jpeg':'.jpg','image/png':'.png','image/gif':'.gif','image/webp':'.webp','image/svg+xml':'.svg'};
+    if(map[mimeType]) return map[mimeType];
+  }
+  return '.jpg';
+}
+</script>
+</body>
+</html>
